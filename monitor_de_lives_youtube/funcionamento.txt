@@ -1,0 +1,10 @@
+canais.txt
+      |
+monitorar_lives.py  ---> detecta live ativa
+      |                               |
+      |--------------------------> coleta metadados e salva em metadados/metadados_VIDEOID.json
+      |                               |
+      |                               | 
+      |---------> chama captura_chat.py ------------> gera chats/chat_VIDEOID.csv
+      |
+   .env (chave)
