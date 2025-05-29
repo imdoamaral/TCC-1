@@ -1,10 +1,14 @@
+"""
+Código para coleta de mensagens do chat com a API oficial do Youtube.
+"""
+
 from googleapiclient.discovery import build
 import pandas as pd
 import time
 import os
 from dotenv import load_dotenv
 
-# Carrega variável do .env
+# Carrega variável .env
 load_dotenv()
 CHAVE_API = os.getenv('YOUTUBE_API_KEY')
 

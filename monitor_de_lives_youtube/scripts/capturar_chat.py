@@ -5,86 +5,87 @@ import os
 from dotenv import load_dotenv
 
 # Carrega variável .env
-API_KEY = os.getenv('YOUTUBE_API_KEY')
+load_dotenv()
+CHAVE_API = os.getenv('YOUTUBE_API_KEY')
 
 # ID da live a ser coletada
-VIDEO_ID = 'ID_DA_LIVE'
-POLLING_INTERVAL = 30  # segundos
+ID_LIVE = 'ID_DA_LIVE'
+INTERVALO_COLETA = 30  # segundos
 
 # Pasta de saída
-OUTPUT_DIR = 'dados/chats'
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-CSV_FILE = os.path.join(OUTPUT_DIR, f'chat_{VIDEO_ID}.csv')
-METADADOS_FILE = os.path.join(OUTPUT_DIR, f'metadados_{VIDEO_ID}.txt')
+PASTA_SAIDA = 'dados/chats'
+os.makedirs(PASTA_SAIDA, exist_ok=True)
+ARQUIVO_CSV = os.path.join(PASTA_SAIDA, f'chat_{ID_LIVE}.csv')
+ARQUIVO_METADADOS = os.path.join(PASTA_SAIDA, f'metadados_{ID_LIVE}.txt')
 
-youtube = build('youtube', 'v3', developerKey=API_KEY)
+youtube = build('youtube', 'v3', developerKey=CHAVE_API)
 
-def get_live_chat_id_and_metadata(video_id):
+def obter_chat_id_e_metadados(id_live):
     request = youtube.videos().list(
         part='snippet,liveStreamingDetails',
-        id=video_id
+        id=id_live
     )
     response = request.execute()
-    items = response.get('items', [])
-    if not items:
+    itens = response.get('items', [])
+    if not itens:
         print('Vídeo não encontrado ou não está ao vivo.')
         return None, None
-    item = items[0]
-    live_details = item.get('liveStreamingDetails', {})
-    live_chat_id = live_details.get('activeLiveChatId') or live_details.get('liveChatId')
-    if not live_chat_id:
+    item = itens[0]
+    detalhes_live = item.get('liveStreamingDetails', {})
+    chat_id = detalhes_live.get('activeLiveChatId') or detalhes_live.get('liveChatId')
+    if not chat_id:
         print('Live não possui chat ativo ou não está ao vivo.')
         return None, None
-    meta = {
-        'video_id': video_id,
+    metadados = {
+        'id_live': id_live,
         'titulo': item['snippet'].get('title', ''),
         'canal': item['snippet'].get('channelTitle', ''),
-        'data_inicio': live_details.get('actualStartTime', ''),
+        'data_inicio': detalhes_live.get('actualStartTime', ''),
     }
-    return live_chat_id, meta
+    return chat_id, metadados
 
-live_chat_id, meta = get_live_chat_id_and_metadata(VIDEO_ID)
-if not live_chat_id:
+chat_id, metadados = obter_chat_id_e_metadados(ID_LIVE)
+if not chat_id:
     exit()
 
-print(f"Capturando chat da live: {meta['titulo']} ({VIDEO_ID})")
+print(f"Capturando chat da live: {metadados['titulo']} ({ID_LIVE})")
 
 # Salva metadados em arquivo txt
-with open(METADADOS_FILE, 'w', encoding='utf-8') as f:
-    for k, v in meta.items():
-        f.write(f"{k}: {v}\n")
+with open(ARQUIVO_METADADOS, 'w', encoding='utf-8') as f:
+    for chave, valor in metadados.items():
+        f.write(f"{chave}: {valor}\n")
 
-messages = []
-next_page_token = None
+mensagens = []
+proximo_token = None
 
 try:
     while True:
         req = youtube.liveChatMessages().list(
-            liveChatId=live_chat_id,
+            liveChatId=chat_id,
             part='snippet,authorDetails',
             maxResults=200,
-            pageToken=next_page_token
+            pageToken=proximo_token
         )
         resp = req.execute()
         for item in resp['items']:
-            messages.append({
-                'video_id': VIDEO_ID,
+            mensagens.append({
+                'id_live': ID_LIVE,
                 'timestamp': item['snippet']['publishedAt'],
-                'author': item['authorDetails']['displayName'],
-                'message': item['snippet']['displayMessage']
+                'autor': item['authorDetails']['displayName'],
+                'mensagem': item['snippet']['displayMessage']
             })
-        if messages:
-            pd.DataFrame(messages).to_csv(CSV_FILE, index=False, encoding='utf-8')
-            print(f"Mensagens coletadas até agora: {len(messages)}")
-        next_page_token = resp.get('nextPageToken')
-        time.sleep(POLLING_INTERVAL)
+        if mensagens:
+            pd.DataFrame(mensagens).to_csv(ARQUIVO_CSV, index=False, encoding='utf-8')
+            print(f"Mensagens coletadas até agora: {len(mensagens)}")
+        proximo_token = resp.get('nextPageToken')
+        time.sleep(INTERVALO_COLETA)
 except KeyboardInterrupt:
     print("Coleta interrompida pelo usuário.")
 except Exception as e:
     print(f"Erro: {e}")
 
-if messages:
-    pd.DataFrame(messages).to_csv(CSV_FILE, index=False, encoding='utf-8')
-    print(f"Mensagens finais exportadas para {CSV_FILE}")
+if mensagens:
+    pd.DataFrame(mensagens).to_csv(ARQUIVO_CSV, index=False, encoding='utf-8')
+    print(f"Mensagens finais exportadas para {ARQUIVO_CSV}")
 else:
     print("Nenhuma mensagem coletada.")
