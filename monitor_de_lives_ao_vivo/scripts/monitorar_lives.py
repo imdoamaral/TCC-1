@@ -7,26 +7,25 @@ from googleapiclient.discovery import build
 from dotenv import load_dotenv
 from datetime import datetime
 
-# Carrega variável de ambiente do .env
+# Carregamento de variáveis e configurações globais
 load_dotenv()
 CHAVE_API = os.getenv('YOUTUBE_API_KEY')
 
-# Horários para intervalo dinâmico
-INTERVALO_CURTO = 600   # 10 min
+# Define intervalos para checagem dinâmica de lives:
+INTERVALO_CURTO = 600   # 10 minutos
 INTERVALO_LONGO = 3600  # 1 hora
 
+# Funções utilitárias
 def obter_intervalo():
-    """Define o intervalo de checagem conforme o horário."""
     agora = datetime.now()
     hora = agora.hour
-    # Das 21h às 0h (inclusive)
+    # Entre 21h e 0h monitorar a cada 10 minutos, senão a cada 1 hora.
     if hora >= 21 or hora <= 0:
         return INTERVALO_CURTO
     else:
         return INTERVALO_LONGO
 
 def registrar_consumo(qtd_busca=0, qtd_metadados=0):
-    """Salva o log de consumo em arquivo diário."""
     hoje = datetime.now().strftime('%Y%m%d')
     caminho_log = f'log_consumo_{hoje}.txt'
     total = qtd_busca*100 + qtd_metadados*1
@@ -45,28 +44,28 @@ def carregar_canais(script_dir):
     return canais
 
 def buscar_lives_ativas(youtube, id_canal):
-    request = youtube.search().list(
+    requisicao = youtube.search().list(
         part='id,snippet',
         channelId=id_canal,
         eventType='live',
         type='video',
         maxResults=1
     )
-    response = request.execute()
+    resposta = requisicao.execute()
     lives = []
-    for item in response.get('items', []):
+    for item in resposta.get('items', []):
         id_video = item['id']['videoId']
         titulo = item['snippet']['title']
         lives.append((id_video, titulo))
     return lives
 
 def buscar_metadados(youtube, id_video):
-    request = youtube.videos().list(
+    requisicao = youtube.videos().list(
         part='snippet,liveStreamingDetails',
         id=id_video
     )
-    response = request.execute()
-    itens = response.get('items', [])
+    resposta = requisicao.execute()
+    itens = resposta.get('items', [])
     if not itens:
         return {}
     item = itens[0]
@@ -82,22 +81,27 @@ def buscar_metadados(youtube, id_video):
     return metadados
 
 def ja_esta_capturando(id_video, script_dir):
-    # Agora só verifica se o chat.csv existe (deixa o lockfile para controle de processo)
     caminho = os.path.join(script_dir, '..', 'dados', 'chats', f'chat_{id_video}.csv')
     return os.path.exists(caminho)
 
-# --- Controle de LOCKFILE para evitar múltiplos processos por id_video ---
-def criar_lock_captura(id_video, script_dir):
-    caminho_lock = os.path.join(script_dir, '..', 'dados', 'chats', f'lock_{id_video}')
-    with open(caminho_lock, 'w') as f:
+# --- Controle de arquivo de trava (lock) para evitar múltiplos processos por id_video ---
+def criar_arquivo_de_trava(id_video, script_dir):
+    """
+    Evita que múltiplas instâncias do monitor tentem capturar a mesma live.
+    """
+    caminho_trava = os.path.join(script_dir, '..', 'dados', 'chats', f'trava_{id_video}')
+    with open(caminho_trava, 'w') as f:
         f.write(str(time.time()))
-    return caminho_lock
+    return caminho_trava
 
-def lock_esta_ativo(id_video, script_dir, minutos=20):
-    caminho_lock = os.path.join(script_dir, '..', 'dados', 'chats', f'lock_{id_video}')
-    if not os.path.exists(caminho_lock):
+def trava_esta_ativa(id_video, script_dir, minutos=20):
+    """
+    Evita múltiplos processos simultâneos, mas permite reiniciar se travou há muito tempo.
+    """
+    caminho_trava = os.path.join(script_dir, '..', 'dados', 'chats', f'trava_{id_video}')
+    if not os.path.exists(caminho_trava):
         return False
-    tempo_criacao = os.path.getmtime(caminho_lock)
+    tempo_criacao = os.path.getmtime(caminho_trava)
     tempo_atual = time.time()
     return (tempo_atual - tempo_criacao) < (minutos * 60)
 
@@ -109,11 +113,11 @@ def salvar_metadados(id_video, metadados, script_dir):
         json.dump(metadados, f, ensure_ascii=False, indent=2)
 
 def iniciar_captura(id_video, script_dir):
-    if lock_esta_ativo(id_video, script_dir):
+    if trava_esta_ativa(id_video, script_dir):
         print(f"[INFO] Já existe um processo capturando chat para a live {id_video}. Ignorando novo processo.")
         return
     print(f"Iniciando captura do chat da live {id_video}...")
-    criar_lock_captura(id_video, script_dir)
+    criar_arquivo_de_trava(id_video, script_dir)
     caminho_capturar = os.path.join(script_dir, 'capturar_chat.py')
     subprocess.Popen([
         sys.executable, caminho_capturar, id_video
@@ -127,51 +131,57 @@ def chat_foi_atualizado(id_video, script_dir, minutos=15):
     tempo_atual = time.time()
     return (tempo_atual - ultima_modificacao) < (minutos * 60)
 
+# Processamento principal
 def main():
+    """
+    1. Cria as pastas necessárias.
+    2. Carrega lista de canais a monitorar.
+    3. Entra em loop, checando periodicamente por novas lives, disparando captura de chat para cada live encontrada.
+    """
     script_dir = os.path.dirname(os.path.abspath(__file__))
     criar_pastas(script_dir)
     youtube = build('youtube', 'v3', developerKey=CHAVE_API)
     canais = carregar_canais(script_dir)
     canais_em_live = {}  # id_canal: id_video
 
-    print("Monitorando canais:", canais)
+    print("Monitorando os seguintes canais:", canais)
     while True:
         qtd_busca = 0
         qtd_metadados = 0
 
         for canal in canais:
-            # Se o canal já está em live, verifica se a coleta ainda está rodando
+            # Se já está em live, só continua se a coleta do chat ainda estiver ativa
             if canal in canais_em_live:
                 id_video = canais_em_live[canal]
                 if not chat_foi_atualizado(id_video, script_dir, minutos=15):
-                    print(f"A live do canal {canal} (vídeo {id_video}) parece ter terminado. Voltando a monitorar o canal.")
+                    print(f"A live do canal {canal} (vídeo {id_video}) provavelmente terminou. Voltando a monitorar o canal.")
                     canais_em_live.pop(canal)
                 else:
                     print(f"Canal {canal} ainda está com coleta ativa para a live {id_video}. Pausando busca por novas lives.")
                 continue
 
-            # Se não está em live, faz a busca normal
+            # Procura novas lives (caso não esteja em live)
             lives = buscar_lives_ativas(youtube, canal)
-            qtd_busca += 1  # conta cada busca de lives
+            qtd_busca += 1
             for id_video, titulo in lives:
                 if not ja_esta_capturando(id_video, script_dir):
-                    print(f"Nova live detectada em {canal}: {titulo} ({id_video})")
+                    print(f"Nova live detectada em {canal}: {titulo} (ID: {id_video})")
                     metadados = buscar_metadados(youtube, id_video)
-                    qtd_metadados += 1  # conta cada busca de metadados
+                    qtd_metadados += 1
                     if metadados:
                         salvar_metadados(id_video, metadados, script_dir)
                     else:
-                        print(f"Não foi possível obter metadados para {id_video}")
+                        print(f"Não foi possível obter metadados para o vídeo {id_video}")
                     iniciar_captura(id_video, script_dir)
-                    canais_em_live[canal] = id_video  # Marca canal como "em live"
+                    canais_em_live[canal] = id_video
                 else:
                     print(f"Já capturando chat da live {id_video} ({titulo})")
 
-        # Registra o consumo de quota a cada rodada
+        # Registra o consumo de quota da API nesta rodada
         registrar_consumo(qtd_busca, qtd_metadados)
 
         intervalo = obter_intervalo()
-        print(f"Aguardando {intervalo // 60} minutos para a próxima checagem...")
+        print(f"Aguardando {intervalo // 60} minutos para a próxima checagem...\n")
         time.sleep(intervalo)
 
 if __name__ == '__main__':
