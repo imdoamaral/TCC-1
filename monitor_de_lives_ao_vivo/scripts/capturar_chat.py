@@ -127,8 +127,12 @@ try:
             })
         # Salva as mensagens já coletadas no arquivo CSV
         if mensagens:
-            pd.DataFrame(mensagens).to_csv(arquivo_csv, index=False, encoding='utf-8')
-            print(f"Total de mensagens coletadas até agora: {len(mensagens)}")
+            df_novo = pd.DataFrame(mensagens)
+            if os.path.exists(arquivo_csv):
+                df_existente = pd.read_csv(arquivo_csv)
+                df_novo = pd.concat([df_existente, df_novo]).drop_duplicates(subset=['timestamp', 'autor', 'mensagem'])
+            df_novo.to_csv(arquivo_csv, index=False, encoding='utf-8')
+            print(f"Total de mensagens coletadas até agora: {len(df_novo)}")
         if contador_sem_mensagem > 0:
             print(f"Mensagens sem texto ignoradas nesta rodada: {contador_sem_mensagem}")
             contador_sem_mensagem = 0

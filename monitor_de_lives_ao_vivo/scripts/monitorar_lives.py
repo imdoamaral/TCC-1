@@ -91,7 +91,7 @@ def criar_arquivo_de_trava(id_video, script_dir):
     """
     caminho_trava = os.path.join(script_dir, '..', 'dados', 'chats', f'trava_{id_video}')
     with open(caminho_trava, 'w') as f:
-        f.write(str(time.time()))
+        f.write(str(os.getpid()))  # Salva o PID do processo
     return caminho_trava
 
 def trava_esta_ativa(id_video, script_dir, minutos=20):
@@ -101,9 +101,13 @@ def trava_esta_ativa(id_video, script_dir, minutos=20):
     caminho_trava = os.path.join(script_dir, '..', 'dados', 'chats', f'trava_{id_video}')
     if not os.path.exists(caminho_trava):
         return False
-    tempo_criacao = os.path.getmtime(caminho_trava)
-    tempo_atual = time.time()
-    return (tempo_atual - tempo_criacao) < (minutos * 60)
+    try:
+        with open(caminho_trava, 'r') as f:
+            pid = int(f.read().strip())
+        os.kill(pid, 0)  # Verifica se o processo está ativo
+        return True
+    except (ValueError, OSError):
+        return False  # Processo não existe ou arquivo de trava inválido
 
 # ------------------------------------------------------------------------
 
@@ -123,13 +127,14 @@ def iniciar_captura(id_video, script_dir):
         sys.executable, caminho_capturar, id_video
     ])
 
-def chat_foi_atualizado(id_video, script_dir, minutos=15):
-    caminho = os.path.join(script_dir, '..', 'dados', 'chats', f'chat_{id_video}.csv')
-    if not os.path.exists(caminho):
+def chat_foi_atualizado(id_video):
+    youtube = build('youtube', 'v3', developerKey=CHAVE_API)
+    requisicao = youtube.videos().list(part='liveStreamingDetails', id=id_video)
+    resposta = requisicao.execute()
+    if not resposta.get('items', []):
         return False
-    ultima_modificacao = os.path.getmtime(caminho)
-    tempo_atual = time.time()
-    return (tempo_atual - ultima_modificacao) < (minutos * 60)
+    detalhes = resposta['items'][0].get('liveStreamingDetails', {})
+    return 'actualEndTime' not in detalhes  # Live ainda ativa se não tiver data de término
 
 # Processamento principal
 def main():
@@ -153,12 +158,11 @@ def main():
             # Se já está em live, só continua se a coleta do chat ainda estiver ativa
             if canal in canais_em_live:
                 id_video = canais_em_live[canal]
-                if not chat_foi_atualizado(id_video, script_dir, minutos=15):
+                if not chat_foi_atualizado(id_video):
                     print(f"A live do canal {canal} (vídeo {id_video}) provavelmente terminou. Voltando a monitorar o canal.")
                     canais_em_live.pop(canal)
                 else:
-                    print(f"Canal {canal} ainda está com coleta ativa para a live {id_video}. Pausando busca por novas lives.")
-                continue
+                    print(f"Canal {canal} ainda está com coleta ativa para a live {id_video}.")
 
             # Procura novas lives (caso não esteja em live)
             lives = buscar_lives_ativas(youtube, canal)
