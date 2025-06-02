@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from googleapiclient.discovery import build
 
 #  CONFIG
-ARQ_CSV = "novos_streamers_calvoesfera.csv"       # acumula vários vídeos, se necessario
+ARQ_CSV = "metadados_video.csv"       # acumula vários vídeos, se necessario
 CAMPOS    = ["id_video", "titulo", "descricao",
              "canal", "data_publicacao", "data_inicio_live", "espectadores_atuais"]
 
