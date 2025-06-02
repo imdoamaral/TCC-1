@@ -12,10 +12,9 @@ CAMPOS    = ["id_video", "titulo", "descricao",
              "canal", "data_publicacao", "data_inicio_live", "espectadores_atuais"]
 
 load_dotenv()
-# API_KEY = os.getenv("YOUTUBE_API_KEY")
-# if not API_KEY:
-#     raise RuntimeError("Defina YOUTUBE_API_KEY no seu .env")
-API_KEY = 'AIzaSyD5boE_7iLCkIzXNIrHCBxnsz9K8MYKB2E'
+API_KEY = os.getenv("YOUTUBE_API_KEY")
+if not API_KEY:
+    raise RuntimeError("Defina YOUTUBE_API_KEY no seu .env")
 
 youtube = build("youtube", "v3", developerKey=API_KEY)
 
