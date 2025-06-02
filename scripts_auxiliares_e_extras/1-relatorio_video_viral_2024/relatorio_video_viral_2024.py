@@ -6,8 +6,7 @@ import time
 
 # Carrega as variáveis do arquivo .env
 load_dotenv()
-# CHAVE_API = os.getenv('YOUTUBE_API_KEY')
-CHAVE_API = 'AIzaSyD5boE_7iLCkIzXNIrHCBxnsz9K8MYKB2E'
+CHAVE_API = os.getenv('YOUTUBE_API_KEY')
 
 if not CHAVE_API:
     raise RuntimeError("CHAVE DA API não encontrada! Verifique o arquivo .env.")
