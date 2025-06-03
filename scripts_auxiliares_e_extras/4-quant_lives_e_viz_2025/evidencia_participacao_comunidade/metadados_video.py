@@ -1,51 +1,48 @@
 # -*- coding: utf-8 -*-
-
 import os, sys, csv, re
-from datetime import datetime
 from urllib.parse import urlparse, parse_qs
 from dotenv import load_dotenv
 from googleapiclient.discovery import build
 
-#  CONFIG
-ARQ_CSV = "metadados_video.csv"       # acumula vários vídeos, se necessario
-CAMPOS    = ["id_video", "titulo", "descricao",
-             "canal", "data_publicacao", "data_inicio_live", "espectadores_atuais"]
+ARQ_CSV = "metadados_video.csv"
+CAMPOS = [
+    "id_video", "titulo", "descricao", "url",
+    "canal", "data_publicacao",
+    "data_inicio_live", "espectadores_atuais",
+    "views", "likes", "comentarios"
+]
 
 load_dotenv()
 API_KEY = os.getenv("YOUTUBE_API_KEY")
 if not API_KEY:
-    raise RuntimeError("Defina YOUTUBE_API_KEY no seu .env")
+    raise RuntimeError("Defina YOUTUBE_API_KEY no .env")
 
 youtube = build("youtube", "v3", developerKey=API_KEY)
 
-# HELPERS
+# ───────── helpers ────────────────────────────────────────────
 def extrair_id(url: str) -> str:
-    """
-    Aceita formatos como:
-        https://youtu.be/XXXX
-        https://www.youtube.com/watch?v=XXXX
-        https://www.youtube.com/watch?v=XXXX&ab_channel=YYY
-    """
     if "youtu.be/" in url:
         return url.split("youtu.be/")[1].split("?")[0]
     q = parse_qs(urlparse(url).query).get("v", [])
-    return q[0] if q else url  # se já for só o id
+    return q[0] if q else url  # já é o próprio ID
 
-def iso(dt_str):
-    """Converte campo possivelmente ausente para ISO ou vazio."""
-    return dt_str if dt_str else ""
+def iso(dt):
+    return dt if dt else ""
 
-# MAIN
+def num(valor):
+    """Converte contagens numéricas para int ou '' se ausente."""
+    return int(valor) if valor and valor.isdigit() else ""
+
+# ───────── main ───────────────────────────────────────────────
 if len(sys.argv) < 2:
-    print("❌ Passe a URL do vídeo como argumento!")
-    sys.exit(1)
+    sys.exit("Passe a URL do vídeo como argumento!")
 
 video_id = extrair_id(sys.argv[1])
 print(f"🔍 Consultando vídeo {video_id}")
 
 resp = youtube.videos().list(
     id=video_id,
-    part="snippet,liveStreamingDetails",
+    part="snippet,statistics,contentDetails,liveStreamingDetails"
 ).execute()
 
 if not resp["items"]:
@@ -53,24 +50,29 @@ if not resp["items"]:
 
 v = resp["items"][0]
 snippet = v["snippet"]
-live   = v.get("liveStreamingDetails", {})
+stats   = v.get("statistics", {})
+live    = v.get("liveStreamingDetails", {})
 
 linha = {
-    "id_video":          v["id"],
-    "titulo":            snippet["title"],
-    "descricao":         re.sub(r"\s+", " ", snippet.get("description", "")).strip(),
-    "canal":             snippet["channelTitle"],
-    "data_publicacao":   iso(snippet.get("publishedAt")),
-    "data_inicio_live":  iso(live.get("actualStartTime")),
+    "id_video":           v["id"],
+    "titulo":             snippet["title"],
+    "descricao":          re.sub(r"\s+", " ", snippet.get("description", "")).strip(),
+    "url":                f"https://www.youtube.com/watch?v={v['id']}",
+    "canal":              snippet["channelTitle"],
+    "data_publicacao":    iso(snippet.get("publishedAt")),
+    "data_inicio_live":   iso(live.get("actualStartTime")),
     "espectadores_atuais": live.get("concurrentViewers", ""),
+    "views":              num(stats.get("viewCount", "")),
+    "likes":              num(stats.get("likeCount", "")),       # dislikeCount não é mais exposto
+    "comentarios":        num(stats.get("commentCount", ""))
 }
 
-# SALVA/ATUALIZA CSV
-gravar_cabecalho = not os.path.exists(ARQ_CSV)
+# ───────── grava / atualiza CSV ───────────────────────────────
+cabecalho = not os.path.exists(ARQ_CSV)
 with open(ARQ_CSV, "a", newline="", encoding="utf-8") as f:
     wr = csv.DictWriter(f, fieldnames=CAMPOS)
-    if gravar_cabecalho:
+    if cabecalho:
         wr.writeheader()
     wr.writerow(linha)
 
-print(f"✅ Dados gravados em {ARQ_CSV}")
+print(f"Dados adicionados em {ARQ_CSV}")
