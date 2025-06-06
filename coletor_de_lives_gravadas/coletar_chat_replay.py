@@ -5,7 +5,6 @@ coletar_chat_replay.py
 Baixa o replay de chat de uma live gravada do YouTube.
 
 """
-
 import os
 import re
 import sys
@@ -18,7 +17,7 @@ import pandas as pd
 from chat_downloader import ChatDownloader
 from yt_dlp import YoutubeDL
 
-INTERVALO_GRAVACAO = 100_000 # flush a cada N mensagens
+INTERVALO_GRAVACAO = 100_000 # grava num CSV se o total chega em 100.000 mensagens
 DIRETORIO_BASE = "dados"
 
 # utilidades
@@ -104,6 +103,7 @@ def normalizar_timestamp(raw_ts: float | int) -> float:
     if raw_ts >= 1e11: # 100 000 000 000
         return raw_ts / 1_000
     return raw_ts
+
 
 def main() -> None:
     if len(sys.argv) < 2:
