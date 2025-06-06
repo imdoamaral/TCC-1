@@ -1,192 +1,215 @@
-import time
-import subprocess
-import os
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Monitor contínuo de lives em canais do YouTube.
+
+— Percorre a lista em ``../canais.txt`` a cada N minutos.
+— Quando detecta uma nova live:
+      1. Salva metadados em ``../dados/metadados/``.
+      2. Dispara ``capturar_chat.py`` em subprocesso para baixar o chat.
+— Usa ``YouTubeAPIManager`` (singleton) para compartilhar a rotação de chaves.
+
+Requer:
+    - google-api-python-client
+    - yt_api_manager.py e config.py no mesmo diretório
+    - canais.txt (um id ou URL de canal por linha)
+"""
+
+from __future__ import annotations
+
 import json
+import logging
+import os
+import subprocess
 import sys
-from googleapiclient.discovery import build
-from dotenv import load_dotenv
+import time
 from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Tuple
 
-# Carregamento de variáveis e configurações globais
-load_dotenv()
-CHAVE_API = os.getenv('YOUTUBE_API_KEY')
+from yt_api_manager import YouTubeAPIManager
 
-# Define intervalos para checagem dinâmica de lives:
-INTERVALO_CURTO = 600   # 10 minutos
-INTERVALO_LONGO = 3600  # 1 hora
+# CONFIGURAÇÕES
+INTERVALO_CURTO = 600     # segundos (22h–0h: checagem a cada 10 min)
+INTERVALO_LONGO = 3600    # segundos (demais horários: checagem a cada 1 h)
 
-# Funções utilitárias
-def obter_intervalo():
-    agora = datetime.now()
-    hora = agora.hour
-    # Entre 21h e 0h monitorar a cada 10 minutos, senão a cada 1 hora.
-    if hora >= 21 or hora <= 0:
-        return INTERVALO_CURTO
-    else:
-        return INTERVALO_LONGO
+# Nível de log (DEBUG, INFO, WARNING…)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%H:%M:%S",
+)
+log = logging.getLogger(__name__)
 
-def registrar_consumo(qtd_busca=0, qtd_metadados=0):
-    hoje = datetime.now().strftime('%Y%m%d')
-    caminho_log = f'log_consumo_{hoje}.txt'
-    total = qtd_busca*100 + qtd_metadados*1
-    log_str = f"{datetime.now().isoformat()} - BUSCA_LIVE: {qtd_busca}, BUSCA_METADADOS: {qtd_metadados}, TOTAL: {total} pontos\n"
-    with open(caminho_log, 'a', encoding='utf-8') as f:
-        f.write(log_str)
+# Instância única para revezar as chaves
+api_manager = YouTubeAPIManager.obter_instancia()
 
-def criar_pastas(script_dir):
-    os.makedirs(os.path.join(script_dir, '..', 'dados', 'chats'), exist_ok=True)
-    os.makedirs(os.path.join(script_dir, '..', 'dados', 'metadados'), exist_ok=True)
+# FUNÇÕES UTILITÁRIAS
+def obter_intervalo() -> int:
+    """Define o intervalo de varredura conforme o horário (dia/noite)."""
+    hora = datetime.now().hour
+    return INTERVALO_CURTO if hora >= 21 or hora <= 0 else INTERVALO_LONGO
 
-def carregar_canais(script_dir):
-    caminho_canais = os.path.join(script_dir, '..', 'canais.txt')
-    with open(os.path.abspath(caminho_canais), 'r') as f:
-        canais = [linha.strip() for linha in f if linha.strip()]
-    return canais
 
-def buscar_lives_ativas(youtube, id_canal):
-    requisicao = youtube.search().list(
-        part='id,snippet',
+def registrar_consumo(qtd_busca: int = 0, qtd_metadados: int = 0) -> None:
+    """Grava consumo aproximado de quota num arquivo diário."""
+    hoje = datetime.now().strftime("%Y%m%d")
+    caminho = Path("log_consumo_{}.txt".format(hoje))
+    pontos = qtd_busca * 100 + qtd_metadados
+    with caminho.open("a", encoding="utf-8") as fp:
+        fp.write(
+            f"{datetime.now().isoformat()} BUSCA:{qtd_busca} "
+            f"METADADOS:{qtd_metadados} TOTAL:{pontos}\n"
+        )
+
+
+def criar_estruturas_pastas(base: Path) -> None:
+    (base / ".." / "dados" / "chats").mkdir(parents=True, exist_ok=True)
+    (base / ".." / "dados" / "metadados").mkdir(parents=True, exist_ok=True)
+
+
+def carregar_canais(base: Path) -> List[str]:
+    arquivo = base / ".." / "canais.txt"
+    with arquivo.open(encoding="utf-8") as fp:
+        return [linha.strip() for linha in fp if linha.strip()]
+
+
+# CHAMADAS À API (WRAPPERS)
+def buscar_lives_ativas(id_canal: str) -> List[Tuple[str, str]]:
+    """Retorna pares (id_video, título) de lives ao vivo no canal."""
+    resp = api_manager.executar_requisicao(
+        lambda cli, **kw: cli.search().list(**kw),
+        part="id,snippet",
         channelId=id_canal,
-        eventType='live',
-        type='video',
-        maxResults=1
+        eventType="live",
+        type="video",
+        maxResults=1,
     )
-    resposta = requisicao.execute()
-    lives = []
-    for item in resposta.get('items', []):
-        id_video = item['id']['videoId']
-        titulo = item['snippet']['title']
-        lives.append((id_video, titulo))
-    return lives
 
-def buscar_metadados(youtube, id_video):
-    requisicao = youtube.videos().list(
-        part='snippet,liveStreamingDetails',
-        id=id_video
+    return [
+        (item["id"]["videoId"], item["snippet"]["title"])
+        for item in resp.get("items", [])
+    ]
+
+
+def buscar_metadados(id_video: str) -> Dict:
+    resp = api_manager.executar_requisicao(
+        lambda cli, **kw: cli.videos().list(**kw),
+        part="snippet,liveStreamingDetails",
+        id=id_video,
     )
-    resposta = requisicao.execute()
-    itens = resposta.get('items', [])
-    if not itens:
+    items = resp.get("items")
+    if not items:
         return {}
-    item = itens[0]
-    metadados = {
-        'id_video': id_video,
-        'titulo': item['snippet'].get('title', ''),
-        'descricao': item['snippet'].get('description', ''),
-        'canal': item['snippet'].get('channelTitle', ''),
-        'data_publicacao': item['snippet'].get('publishedAt', ''),
-        'data_inicio_live': item.get('liveStreamingDetails', {}).get('actualStartTime', ''),
-        'espectadores_atuais': item.get('liveStreamingDetails', {}).get('concurrentViewers', ''),
+    item = items[0]
+    detalhes = item.get("liveStreamingDetails", {})
+    return {
+        "id_video": id_video,
+        "titulo": item["snippet"].get("title", ""),
+        "descricao": item["snippet"].get("description", ""),
+        "canal": item["snippet"].get("channelTitle", ""),
+        "data_publicacao": item["snippet"].get("publishedAt", ""),
+        "data_inicio_live": detalhes.get("actualStartTime", ""),
+        "espectadores_atuais": detalhes.get("concurrentViewers", ""),
     }
-    return metadados
 
-def ja_esta_capturando(id_video, script_dir):
-    caminho = os.path.join(script_dir, '..', 'dados', 'chats', f'chat_{id_video}.csv')
-    return os.path.exists(caminho)
 
-# --- Controle de arquivo de trava (lock) para evitar múltiplos processos por id_video ---
-def criar_arquivo_de_trava(id_video, script_dir):
-    """
-    Evita que múltiplas instâncias do monitor tentem capturar a mesma live.
-    """
-    caminho_trava = os.path.join(script_dir, '..', 'dados', 'chats', f'trava_{id_video}')
-    with open(caminho_trava, 'w') as f:
-        f.write(str(os.getpid()))  # Salva o PID do processo
-    return caminho_trava
+def live_ainda_ativa(id_video: str) -> bool:
+    """Confere se a live já terminou (campo actualEndTime)."""
+    resp = api_manager.executar_requisicao(
+        lambda cli, **kw: cli.videos().list(**kw),
+        part="liveStreamingDetails",
+        id=id_video,
+    )
+    items = resp.get("items")
+    if not items:
+        return False
+    details = items[0].get("liveStreamingDetails", {})
+    return "actualEndTime" not in details
 
-def trava_esta_ativa(id_video, script_dir, minutos=20):
-    """
-    Evita múltiplos processos simultâneos, mas permite reiniciar se travou há muito tempo.
-    """
-    caminho_trava = os.path.join(script_dir, '..', 'dados', 'chats', f'trava_{id_video}')
-    if not os.path.exists(caminho_trava):
+
+# CONTROLE DE TRAVAS
+def caminho_trava(id_video: str, base: Path) -> Path:
+    return base / ".." / "dados" / "chats" / f"trava_{id_video}"
+
+
+def trava_ativa(id_video: str, base: Path) -> bool:
+    """Verifica se já existe processo capturando esse chat."""
+    arq = caminho_trava(id_video, base)
+    if not arq.exists():
         return False
     try:
-        with open(caminho_trava, 'r') as f:
-            pid = int(f.read().strip())
-        os.kill(pid, 0)  # Verifica se o processo está ativo
+        pid = int(arq.read_text().strip())
+        os.kill(pid, 0)
         return True
     except (ValueError, OSError):
-        return False  # Processo não existe ou arquivo de trava inválido
-
-# ------------------------------------------------------------------------
-
-def salvar_metadados(id_video, metadados, script_dir):
-    caminho = os.path.join(script_dir, '..', 'dados', 'metadados', f'metadados_{id_video}.json')
-    with open(caminho, 'w', encoding='utf-8') as f:
-        json.dump(metadados, f, ensure_ascii=False, indent=2)
-
-def iniciar_captura(id_video, script_dir):
-    if trava_esta_ativa(id_video, script_dir):
-        print(f"[INFO] Já existe um processo capturando chat para a live {id_video}. Ignorando novo processo.")
-        return
-    print(f"Iniciando captura do chat da live {id_video}...")
-    criar_arquivo_de_trava(id_video, script_dir)
-    caminho_capturar = os.path.join(script_dir, 'capturar_chat.py')
-    subprocess.Popen([
-        sys.executable, caminho_capturar, id_video
-    ])
-
-def chat_foi_atualizado(id_video):
-    youtube = build('youtube', 'v3', developerKey=CHAVE_API)
-    requisicao = youtube.videos().list(part='liveStreamingDetails', id=id_video)
-    resposta = requisicao.execute()
-    if not resposta.get('items', []):
         return False
-    detalhes = resposta['items'][0].get('liveStreamingDetails', {})
-    return 'actualEndTime' not in detalhes  # Live ainda ativa se não tiver data de término
 
-# Processamento principal
-def main():
-    """
-    1. Cria as pastas necessárias.
-    2. Carrega lista de canais a monitorar.
-    3. Entra em loop, checando periodicamente por novas lives, disparando captura de chat para cada live encontrada.
-    """
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    criar_pastas(script_dir)
-    youtube = build('youtube', 'v3', developerKey=CHAVE_API)
-    canais = carregar_canais(script_dir)
-    canais_em_live = {}  # id_canal: id_video
 
-    print("Monitorando os seguintes canais:", canais)
+def criar_trava(id_video: str, base: Path) -> None:
+    caminho_trava(id_video, base).write_text(str(os.getpid()))
+
+
+# ROTINAS DE CAPTURA
+def salvar_metadados(id_video: str, dados: Dict, base: Path) -> None:
+    arq = base / ".." / "dados" / "metadados" / f"metadados_{id_video}.json"
+    with arq.open("w", encoding="utf-8") as fp:
+        json.dump(dados, fp, ensure_ascii=False, indent=2)
+
+
+def iniciar_captura_chat(id_video: str, base: Path) -> None:
+    if trava_ativa(id_video, base):
+        log.info("Chat %s já está sendo capturado.", id_video)
+        return
+
+    criar_trava(id_video, base)
+    subprocess.Popen(
+        [sys.executable, base / "capturar_chat.py", id_video],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    log.info("Captura do chat iniciada para %s", id_video)
+
+
+# MAIN
+def main() -> None:
+    base_dir = Path(__file__).resolve().parent
+    criar_estruturas_pastas(base_dir)
+    canais = carregar_canais(base_dir)
+    canais_em_live: Dict[str, str] = {}
+
+    log.info("Monitorando %d canais…", len(canais))
     while True:
-        qtd_busca = 0
-        qtd_metadados = 0
+        q_busca = q_meta = 0
 
         for canal in canais:
-            # Se já está em live, só continua se a coleta do chat ainda estiver ativa
-            if canal in canais_em_live:
-                id_video = canais_em_live[canal]
-                if not chat_foi_atualizado(id_video):
-                    print(f"A live do canal {canal} (vídeo {id_video}) provavelmente terminou. Voltando a monitorar o canal.")
-                    canais_em_live.pop(canal)
-                else:
-                    print(f"Canal {canal} ainda está com coleta ativa para a live {id_video}.")
+            # Se o canal já estava em live, verifique se terminou
+            if canal in canais_em_live and not live_ainda_ativa(canais_em_live[canal]):
+                log.info("Live %s finalizada.", canais_em_live[canal])
+                canais_em_live.pop(canal)
 
-            # Procura novas lives (caso não esteja em live)
-            lives = buscar_lives_ativas(youtube, canal)
-            qtd_busca += 1
-            for id_video, titulo in lives:
-                if not ja_esta_capturando(id_video, script_dir):
-                    print(f"Nova live detectada em {canal}: {titulo} (ID: {id_video})")
-                    metadados = buscar_metadados(youtube, id_video)
-                    qtd_metadados += 1
-                    if metadados:
-                        salvar_metadados(id_video, metadados, script_dir)
-                    else:
-                        print(f"Não foi possível obter metadados para o vídeo {id_video}")
-                    iniciar_captura(id_video, script_dir)
-                    canais_em_live[canal] = id_video
-                else:
-                    print(f"Já capturando chat da live {id_video} ({titulo})")
+            # Procura lives novas
+            for vid, titulo in buscar_lives_ativas(canal):
+                q_busca += 1
+                if trava_ativa(vid, base_dir):
+                    continue
 
-        # Registra o consumo de quota da API nesta rodada
-        registrar_consumo(qtd_busca, qtd_metadados)
+                log.info("Nova live: %s — %s", canal, titulo)
+                meta = buscar_metadados(vid)
+                q_meta += 1
+                if meta:
+                    salvar_metadados(vid, meta, base_dir)
+                iniciar_captura_chat(vid, base_dir)
+                canais_em_live[canal] = vid
 
+        registrar_consumo(q_busca, q_meta)
         intervalo = obter_intervalo()
-        print(f"Aguardando {intervalo // 60} minutos para a próxima checagem...\n")
+        log.info("Aguardando %d min…\n", intervalo // 60)
         time.sleep(intervalo)
 
-if __name__ == '__main__':
-    main()
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        log.info("Monitor interrompido pelo usuário.")

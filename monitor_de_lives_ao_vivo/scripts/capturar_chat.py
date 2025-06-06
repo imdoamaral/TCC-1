@@ -1,154 +1,192 @@
-from googleapiclient.discovery import build
-import pandas as pd
-import time
-import os
-import re
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Capturador de chat ao vivo do YouTube.
+
+Recebe o ID do vídeo como argumento, busca o `liveChatId`, grava metadados do
+vídeo em CSV e, a cada 30 s, anexa novas mensagens no arquivo
+``dados/<canal>__<data_inicio>__<hora_inicio>__<id_video>/chat.csv``.
+
+Pré-requisitos:
+    - google-api-python-client
+    - pandas
+    - yt_api_manager.py (mesmo diretório) + config.py
+    - ser chamado pelo monitor ou manualmente:  ``python3 capturar_chat.py <ID>``
+
+O script cria um arquivo-trava em ``dados/chats/trava_<id_video>`` para impedir
+instâncias duplicadas e o remove ao terminar.
+"""
+
+from __future__ import annotations
+
 import csv
-from dotenv import load_dotenv
-from datetime import datetime
+import logging
+import os
 import sys
+import time
+import unicodedata
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Tuple
 
-# Carregamento de variáveis e configurações globais
-load_dotenv()
-CHAVE_API = os.getenv('YOUTUBE_API_KEY')
+import pandas as pd
 
-INTERVALO_COLETA = 30  # Tempo (em segundos) entre cada busca de mensagens do chat.
+from yt_api_manager import YouTubeAPIManager
 
-youtube = build('youtube', 'v3', developerKey=CHAVE_API)
+# CONFIGURAÇÕES
+INTERVALO_COLETA = 30  # segundos
 
-# Funções utilitárias
-def gerar_nome_pasta(texto):
-    import unicodedata
-    texto = unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('ASCII')
-    texto = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', texto)
-    return texto
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%H:%M:%S",
+)
+log = logging.getLogger(__name__)
 
-def extrair_data_hora_iso(iso_str):
+api_manager = YouTubeAPIManager.obter_instancia()
+
+# FUNÇÕES AUXILIARES
+def slugify(texto: str) -> str:
+    """Remove acentos e caracteres proibidos para usar em nomes de pasta."""
+    texto = unicodedata.normalize("NFKD", texto).encode("ASCII", "ignore").decode("ASCII")
+    return "".join(c if c.isalnum() or c in "._-" else "_" for c in texto)
+
+
+def split_iso_datetime(iso_str: str) -> Tuple[str, str]:
+    """Devolve (YYYY-MM-DD, HH-MM-SS) a partir de uma string ISO-8601."""
     if not iso_str:
-        return '', ''
+        return "", ""
     try:
-        dt = datetime.fromisoformat(iso_str.replace('Z', '+00:00'))
-        data_fmt = dt.strftime('%Y-%m-%d')
-        hora_fmt = dt.strftime('%H-%M-%S')
-        return data_fmt, hora_fmt
+        dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+        return dt.strftime("%Y-%m-%d"), dt.strftime("%H-%M-%S")
     except Exception:
-        return iso_str[:10], iso_str[11:19].replace(':', '-')
+        return iso_str[:10], iso_str[11:19].replace(":", "-")
 
-def remover_arquivo_de_trava(id_video):
-    caminho_trava = f'dados/chats/trava_{id_video}'
-    if os.path.exists(caminho_trava):
-        try:
-            os.remove(caminho_trava)
-            print(f"Arquivo de trava {caminho_trava} removido com sucesso.")
-        except Exception as e:
-            print(f"Erro ao remover arquivo de trava: {e}")
 
-def obter_id_chat_e_metadados(id_video):
-    requisicao = youtube.videos().list(
-        part='snippet,liveStreamingDetails',
-        id=id_video
+def caminho_trava(id_video: str) -> Path:
+    return Path("dados") / "chats" / f"trava_{id_video}"
+
+
+def remover_trava(id_video: str) -> None:
+    """Exclui o arquivo-trava (usado pelo monitor)."""
+    try:
+        caminho_trava(id_video).unlink(missing_ok=True)
+    except Exception as exc:  # pragma: no cover
+        log.warning("Erro ao remover trava: %s", exc)
+
+
+# CHAMADAS À API / METADADOS
+def obter_chat_e_metadados(id_video: str) -> Tuple[str | None, Dict | None]:
+    """Retorna (liveChatId, metadados) ou (None, None) se não achar/live offline."""
+    resp = api_manager.executar_requisicao(
+        lambda cli, **kw: cli.videos().list(**kw),
+        part="snippet,liveStreamingDetails",
+        id=id_video,
     )
-    resposta = requisicao.execute()
-    itens = resposta.get('items', [])
+    itens = resp.get("items")
     if not itens:
-        print('Vídeo não encontrado ou não está ao vivo.')
+        log.error("Vídeo %s não encontrado.", id_video)
         return None, None
+
     item = itens[0]
-    detalhes_live = item.get('liveStreamingDetails', {})
-    id_chat = detalhes_live.get('activeLiveChatId') or detalhes_live.get('liveChatId')
+    detalhes = item.get("liveStreamingDetails", {})
+    id_chat = detalhes.get("activeLiveChatId") or detalhes.get("liveChatId")
     if not id_chat:
-        print('Esta live não possui chat ativo ou não está ao vivo.')
+        log.error("O vídeo %s não possui chat ao vivo.", id_video)
         return None, None
 
-    metadados = {
-        'id_video': id_video,
-        'titulo': item['snippet'].get('title', ''),
-        'descricao': item['snippet'].get('description', ''),
-        'canal': item['snippet'].get('channelTitle', ''),
-        'data_publicacao': item['snippet'].get('publishedAt', ''),
-        'data_inicio_live': detalhes_live.get('actualStartTime', ''),
-        'espectadores_atuais': detalhes_live.get('concurrentViewers', '')
+    meta = {
+        "id_video": id_video,
+        "titulo": item["snippet"].get("title", ""),
+        "descricao": item["snippet"].get("description", ""),
+        "canal": item["snippet"].get("channelTitle", ""),
+        "data_publicacao": item["snippet"].get("publishedAt", ""),
+        "data_inicio_live": detalhes.get("actualStartTime", ""),
+        "espectadores_atuais": detalhes.get("concurrentViewers", ""),
     }
-    return id_chat, metadados
+    return id_chat, meta
 
-# Processamento principal
 
-# 1. Captura o ID do vídeo da linha de comando ou usa um valor padrão para testes
-if len(sys.argv) > 1:
+# MAIN
+def main() -> None:
+    if len(sys.argv) < 2:
+        log.error("Uso: python3 capturar_chat.py <ID_VIDEO>")
+        sys.exit(1)
+
     id_video = sys.argv[1]
-else:
-    id_video = 'P5nPF1gbl4Q'  # Valor padrão para testes. Substitua pelo desejado.
+    id_chat, meta = obter_chat_e_metadados(id_video)
+    if not id_chat:
+        sys.exit(1)
 
-# 2. Busca metadados da live e valida existência do chat ao vivo
-id_chat, metadados = obter_id_chat_e_metadados(id_video)
-if not id_chat:
-    exit()
+    # Diretório de saída
+    data_fmt, hora_fmt = split_iso_datetime(meta["data_inicio_live"])
+    pasta_live = (
+        Path("dados")
+        / f"{slugify(meta['canal'])}__{data_fmt}__{hora_fmt}__{id_video}"
+    )
+    pasta_live.mkdir(parents=True, exist_ok=True)
+    arq_chat = pasta_live / "chat.csv"
+    arq_meta = pasta_live / "metadados.csv"
 
-data_fmt, hora_fmt = extrair_data_hora_iso(metadados['data_inicio_live'])
-nome_canal = gerar_nome_pasta(metadados['canal'])
-pasta_live = os.path.join('dados', f"{nome_canal}__{data_fmt}__{hora_fmt}__{id_video}")
-os.makedirs(pasta_live, exist_ok=True)
-arquivo_csv = os.path.join(pasta_live, 'chat.csv')
-arquivo_metadados = os.path.join(pasta_live, 'metadados.csv')
+    # Salva metadados (linha única)
+    with arq_meta.open("w", newline="", encoding="utf-8") as fp:
+        csv.DictWriter(fp, fieldnames=meta.keys()).writerow(meta)
 
-print(f"Iniciando captura do chat da live: '{metadados['titulo']}' (ID: {id_video}) do canal '{metadados['canal']}'.")
+    log.info("Capturando chat de '%s' (%s)…", meta["titulo"], id_video)
+    mensagens: List[Dict] = []
+    proximo_token: str | None = None
+    msgs_sem_texto = 0
 
-# 3. Salva os metadados em arquivo CSV para referência futura.
-with open(arquivo_metadados, 'w', newline='', encoding='utf-8') as csvfile:
-    writer = csv.DictWriter(csvfile, fieldnames=metadados.keys())
-    writer.writeheader()
-    writer.writerow(metadados)
+    try:
+        while True:
+            resp = api_manager.executar_requisicao(
+                lambda cli, **kw: cli.liveChatMessages().list(**kw),
+                liveChatId=id_chat,
+                part="snippet,authorDetails",
+                maxResults=200,
+                pageToken=proximo_token,
+            )
 
-# 4. Loop principal de coleta das mensagens do chat ao vivo
-mensagens = []
-proximo_token = None
-contador_sem_mensagem = 0
+            for item in resp["items"]:
+                texto = item["snippet"].get("displayMessage")
+                if texto:
+                    mensagens.append(
+                        {
+                            "id_video": id_video,
+                            "timestamp": item["snippet"]["publishedAt"],
+                            "autor": item["authorDetails"]["displayName"],
+                            "mensagem": texto,
+                        }
+                    )
+                else:
+                    msgs_sem_texto += 1
 
-try:
-    while True:
-        # Consulta a API do YouTube para obter até 200 mensagens novas do chat
-        requisicao = youtube.liveChatMessages().list(
-            liveChatId=id_chat,
-            part='snippet,authorDetails',
-            maxResults=200,
-            pageToken=proximo_token
-        )
-        resposta = requisicao.execute()
-        for item in resposta['items']:
-            mensagem = item['snippet'].get('displayMessage')
-            if not mensagem:
-                contador_sem_mensagem += 1
-                continue
-            mensagens.append({
-                'id_video': id_video,
-                'timestamp': item['snippet']['publishedAt'],
-                'autor': item['authorDetails']['displayName'],
-                'mensagem': mensagem
-            })
-        # Salva as mensagens já coletadas no arquivo CSV
-        if mensagens:
-            df_novo = pd.DataFrame(mensagens)
-            if os.path.exists(arquivo_csv):
-                df_existente = pd.read_csv(arquivo_csv)
-                df_novo = pd.concat([df_existente, df_novo]).drop_duplicates(subset=['timestamp', 'autor', 'mensagem'])
-            df_novo.to_csv(arquivo_csv, index=False, encoding='utf-8')
-            print(f"Total de mensagens coletadas até agora: {len(df_novo)}")
-        if contador_sem_mensagem > 0:
-            print(f"Mensagens sem texto ignoradas nesta rodada: {contador_sem_mensagem}")
-            contador_sem_mensagem = 0
-        # Avança para o próximo lote de mensagens, se houver
-        proximo_token = resposta.get('nextPageToken')
-        time.sleep(INTERVALO_COLETA)
-except KeyboardInterrupt:
-    print("Coleta interrompida pelo usuário.")
-except Exception as e:
-    print(f"Ocorreu um erro durante a coleta: {e}")
-finally:
-    remover_arquivo_de_trava(metadados['id_video'])
+            # Salva lote a cada iteração
+            if mensagens:
+                df_novo = pd.DataFrame(mensagens)
+                if arq_chat.exists():
+                    df_novo = pd.concat([pd.read_csv(arq_chat), df_novo]).drop_duplicates(
+                        subset=["timestamp", "autor", "mensagem"]
+                    )
+                df_novo.to_csv(arq_chat, index=False, encoding="utf-8")
+                log.info("Mensagens acumuladas: %d", len(df_novo))
+                mensagens.clear()
 
-if mensagens:
-    pd.DataFrame(mensagens).to_csv(arquivo_csv, index=False, encoding='utf-8')
-    print(f"Mensagens finais exportadas para {arquivo_csv}")
-else:
-    print("Nenhuma mensagem foi coletada do chat.")
+            proximo_token = resp.get("nextPageToken")
 
+            if msgs_sem_texto:
+                log.debug("%d mensagens sem texto ignoradas.", msgs_sem_texto)
+                msgs_sem_texto = 0
+
+            time.sleep(INTERVALO_COLETA)
+
+    except KeyboardInterrupt:
+        log.info("Captura interrompida pelo usuário.")
+    except Exception as exc:  # pragma: no cover
+        log.error("Erro durante a captura: %s", exc)
+    finally:
+        remover_trava(id_video)
+
+
+if __name__ == "__main__":
+    main()

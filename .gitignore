@@ -3,3 +3,5 @@ monitor_de_lives_ao_vivo/dados
 scripts_auxiliares_e_extras/lives_gravadas_streamers
 scripts_auxiliares_e_extras/relatorio_lives_calvoesfera
 scripts_auxiliares_e_extras/videos_referencias_calvoesfera
+monitor_de_lives_ao_vivo/scripts/yt_api_config.py
+monitor_de_lives_ao_vivo/scripts/__pycache__
