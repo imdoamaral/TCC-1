@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 coletar_chat_replay.py
-Baixa o replay de chat de uma live gravada do YouTube e grava:
+Baixa o replay de chat de uma live gravada do YouTube.
 
 """
 
