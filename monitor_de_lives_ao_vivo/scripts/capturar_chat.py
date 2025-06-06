@@ -34,7 +34,7 @@ import pandas as pd
 from yt_api_manager import YouTubeAPIManager
 
 # CONFIGURAÇÕES
-INTERVALO_COLETA = 30  # segundos
+INTERVALO_COLETA = 30 # segundos
 
 logging.basicConfig(
     level=logging.INFO,
@@ -185,7 +185,7 @@ def main() -> None:
 
     except KeyboardInterrupt:
         log.info("Captura interrompida pelo usuário.")
-    except Exception as exc:  # pragma: no cover
+    except Exception as exc: # pragma: no cover
         log.error("Erro durante a captura: %s", exc)
     finally:
         remover_trava(id_video)

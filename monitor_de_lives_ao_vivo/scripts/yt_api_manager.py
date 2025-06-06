@@ -12,7 +12,7 @@ import logging
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-import yt_api_config  # config.youtube_keys, config.try_again_timeout
+import yt_api_config # config.youtube_keys, config.try_again_timeout
 
 logger = logging.getLogger(__name__)
 

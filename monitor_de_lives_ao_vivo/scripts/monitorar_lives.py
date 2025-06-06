@@ -95,7 +95,7 @@ def buscar_lives_ativas(id_canal: str) -> List[Tuple[str, str]]:
 def buscar_metadados(id_video: str) -> Dict:
     resp = api_manager.executar_requisicao(
         lambda cli, **kw: cli.videos().list(**kw),
-        part="snippet,liveStreamingDetails,statistics",   # ➊ inclui statistics
+        part="snippet,liveStreamingDetails,statistics",
         id=id_video,
     )
     items = resp.get("items")
