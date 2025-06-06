@@ -30,8 +30,8 @@ from typing import Dict, List, Tuple
 from yt_api_manager import YouTubeAPIManager
 
 # CONFIGURAÇÕES
-INTERVALO_CURTO = 600     # segundos (22h–0h: checagem a cada 10 min)
-INTERVALO_LONGO = 3600    # segundos (demais horários: checagem a cada 1 h)
+INTERVALO_CURTO = 600   # segundos (22h–0h: checagem a cada 10 min)
+INTERVALO_LONGO = 3600  # segundos (demais horários: checagem a cada 1 h)
 
 # Nível de log (DEBUG, INFO, WARNING…)
 logging.basicConfig(
@@ -183,22 +183,33 @@ def main() -> None:
         q_busca = q_meta = 0
 
         for canal in canais:
-            # Se o canal já estava em live, verifique se terminou
-            if canal in canais_em_live and not live_ainda_ativa(canais_em_live[canal]):
-                log.info("Live %s finalizada.", canais_em_live[canal])
+            # 1) Já temos live em andamento?
+            if canal in canais_em_live:
+                vid = canais_em_live[canal]
+
+                # a) Live ainda rolando → não gaste quota
+                if live_ainda_ativa(vid):
+                    continue
+
+                # b) Terminou → limpa registro
+                log.info("Live %s finalizada.", vid)
                 canais_em_live.pop(canal)
 
-            # Procura lives novas
-            for vid, titulo in buscar_lives_ativas(canal):
-                q_busca += 1
+            # 2) Só chega aqui se NÃO houver live ativa
+            q_busca += 1 # <-- conta 1 search.list (100 u)
+            lives = buscar_lives_ativas(canal) # faz a chamada de 100 u
+
+            for vid, titulo in lives:
                 if trava_ativa(vid, base_dir):
                     continue
 
                 log.info("Nova live: %s — %s", canal, titulo)
                 meta = buscar_metadados(vid)
-                q_meta += 1
+                q_meta += 1 # +1 u do videos.list
+
                 if meta:
                     salvar_metadados(vid, meta, base_dir)
+
                 iniciar_captura_chat(vid, base_dir)
                 canais_em_live[canal] = vid
 
