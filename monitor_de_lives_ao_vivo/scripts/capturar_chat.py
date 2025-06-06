@@ -96,13 +96,16 @@ def obter_chat_e_metadados(id_video: str) -> Tuple[str | None, Dict | None]:
         return None, None
 
     meta = {
-        "id_video": id_video,
-        "titulo": item["snippet"].get("title", ""),
-        "descricao": item["snippet"].get("description", ""),
-        "canal": item["snippet"].get("channelTitle", ""),
-        "data_publicacao": item["snippet"].get("publishedAt", ""),
-        "data_inicio_live": detalhes.get("actualStartTime", ""),
-        "espectadores_atuais": detalhes.get("concurrentViewers", ""),
+    "id_video"           : id_video,
+    "titulo"             : item["snippet"].get("title", ""),
+    "descricao"          : item["snippet"].get("description", ""),
+    "canal"              : item["snippet"].get("channelTitle", ""),
+    "data_publicacao"    : item["snippet"].get("publishedAt", ""),
+    "data_inicio_live"   : detalhes.get("actualStartTime", ""),
+    "espectadores_atuais": detalhes.get("concurrentViewers", ""),
+    "likes"              : int(item.get("statistics", {}).get("likeCount", 0)),
+    "visualizacoes"      : int(item.get("statistics", {}).get("viewCount", 0)),
+    "comentarios"        : int(item.get("statistics", {}).get("commentCount", 0)),
     }
     return id_chat, meta
 

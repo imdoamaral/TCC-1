@@ -54,7 +54,10 @@ def obter_metadados_video(id_video: str, url_para_info: str) -> dict:
         "canal": "",
         "data_publicacao": "",
         "data_inicio_live": "",
-        "espectadores_atuais": ""
+        "espectadores_atuais": "",
+        "likes": 0,
+        "visualizacoes": 0,
+        "comentarios": 0,
     }
 
     def ts_iso(seg: int | None) -> str:
@@ -70,8 +73,9 @@ def obter_metadados_video(id_video: str, url_para_info: str) -> dict:
         return padrao
 
     pub_iso = ""
-    if info.get("upload_date"):  # YYYYMMDD
-        pub_iso = datetime.strptime(info["upload_date"], "%Y%m%d").strftime("%Y-%m-%dT00:00:00Z")
+    if info.get("upload_date"): # YYYYMMDD
+        pub_iso = datetime.strptime(info["upload_date"], "%Y%m%d")\
+                         .strftime("%Y-%m-%dT00:00:00Z")
 
     return {
         "id_video":            id_video,
@@ -79,8 +83,12 @@ def obter_metadados_video(id_video: str, url_para_info: str) -> dict:
         "descricao":           info.get("description", ""),
         "canal":               info.get("uploader") or info.get("channel", ""),
         "data_publicacao":     pub_iso,
-        "data_inicio_live":    ts_iso(info.get("release_timestamp") or info.get("live_start_timestamp")),
-        "espectadores_atuais": ""
+        "data_inicio_live":    ts_iso(info.get("release_timestamp")
+                                   or info.get("live_start_timestamp")),
+        "espectadores_atuais": "", # não vale para replay
+        "likes":               int(info.get("like_count", 0)),
+        "visualizacoes":       int(info.get("view_count", 0)),
+        "comentarios":         int(info.get("comment_count", 0)),
     }
 
 

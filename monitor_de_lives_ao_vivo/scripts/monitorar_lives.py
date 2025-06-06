@@ -95,23 +95,30 @@ def buscar_lives_ativas(id_canal: str) -> List[Tuple[str, str]]:
 def buscar_metadados(id_video: str) -> Dict:
     resp = api_manager.executar_requisicao(
         lambda cli, **kw: cli.videos().list(**kw),
-        part="snippet,liveStreamingDetails",
+        part="snippet,liveStreamingDetails,statistics",   # ➊ inclui statistics
         id=id_video,
     )
     items = resp.get("items")
     if not items:
         return {}
-    item = items[0]
-    detalhes = item.get("liveStreamingDetails", {})
+
+    item      = items[0]
+    detalhes  = item.get("liveStreamingDetails", {})
+    estat     = item.get("statistics", {})
+
     return {
-        "id_video": id_video,
-        "titulo": item["snippet"].get("title", ""),
-        "descricao": item["snippet"].get("description", ""),
-        "canal": item["snippet"].get("channelTitle", ""),
-        "data_publicacao": item["snippet"].get("publishedAt", ""),
-        "data_inicio_live": detalhes.get("actualStartTime", ""),
+        "id_video"           : id_video,
+        "titulo"             : item["snippet"].get("title", ""),
+        "descricao"          : item["snippet"].get("description", ""),
+        "canal"              : item["snippet"].get("channelTitle", ""),
+        "data_publicacao"    : item["snippet"].get("publishedAt", ""),
+        "data_inicio_live"   : detalhes.get("actualStartTime", ""),
         "espectadores_atuais": detalhes.get("concurrentViewers", ""),
+        "likes"              : int(estat.get("likeCount", 0)),
+        "visualizacoes"      : int(estat.get("viewCount", 0)),
+        "comentarios"        : int(estat.get("commentCount", 0)),
     }
+
 
 
 def live_ainda_ativa(id_video: str) -> bool:
