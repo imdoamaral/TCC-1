@@ -131,9 +131,12 @@ def main() -> None:
     arq_chat = pasta_live / "chat.csv"
     arq_meta = pasta_live / "metadados.csv"
 
-    # Salva metadados (linha única)
+    # Salva metadados
     with arq_meta.open("w", newline="", encoding="utf-8") as fp:
-        csv.DictWriter(fp, fieldnames=meta.keys()).writerow(meta)
+        writer = csv.DictWriter(fp, fieldnames=meta.keys())
+        writer.writeheader()      # grava o cabeçalho
+        writer.writerow(meta)     # grava a linha de dados
+
 
     log.info("Capturando chat de '%s' (%s)…", meta["titulo"], id_video)
     mensagens: List[Dict] = []
