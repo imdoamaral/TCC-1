@@ -1,5 +1,5 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 """
 Gerencia a rotação de chaves da API do YouTube.
 
@@ -12,7 +12,7 @@ import logging
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-import yt_api_config # config.youtube_keys, config.try_again_timeout
+import yt_api_config
 
 logger = logging.getLogger(__name__)
 

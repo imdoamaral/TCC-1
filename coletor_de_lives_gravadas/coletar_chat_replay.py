@@ -1,10 +1,10 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 """
 coletar_chat_replay.py
 Baixa o replay de chat de uma live gravada do YouTube.
-
 """
+
 import os
 import re
 import sys
