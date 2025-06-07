@@ -42,7 +42,7 @@ class YouTubeAPIManager:
         self._idx = (self._idx + 1) % len(self._keys)
         chave = self._keys[self._idx]
         logger.info("Usando chave %d/%d", self._idx + 1, len(self._keys))
-        return build(self.SERVICO, self.VERSAO, developerKey=chave)
+        return build(self.SERVICO, self.VERSAO, developerKey=chave, cache_discovery=False)
 
     # API pública
     def executar_requisicao(self, metodo, **kwargs):
