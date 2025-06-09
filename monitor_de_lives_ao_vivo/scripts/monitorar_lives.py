@@ -181,7 +181,7 @@ def exibir_status(vivos: Dict[str, Dict]) -> None:
     tabela = Table(title="Lives ativas", header_style="bold magenta")
     tabela.add_column("Canal")
     tabela.add_column("Título (até 60 car.)")
-    tabela.add_column("Duração", justify="right")
+    tabela.add_column("Duração da coleta (horas)", justify="right")
 
     for info in vivos.values():
         dur = datetime.now() - info["inicio"]
