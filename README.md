@@ -1,40 +1,49 @@
-# Funcionamento do "Monitor de lives do Youtube"
+# Monitor de Lives do YouTube
 
-**Este não é o projeto final do TCC**, é apenas um side project para apoiar na coleta de mensagens de chats ao vivo do Youtube.
+**Este não é o projeto final do TCC.**  
+É um *side project* de apoio à coleta automatizada de mensagens em chats de transmissões ao vivo no YouTube.
 
-### Resumo
+## 📌 Resumo
 
-- O monitor detecta novas lives e inicia automaticamente a coleta de chats, metadados e logs do processo.
-- Cada transmissão monitorada gera dois arquivos principais: um com metadados da live e outro com as mensagens do chat.
-- Logs diários registram o consumo de quota e o funcionamento do sistema.
+- Detecta novas lives automaticamente.
+- Inicia a coleta do **chat ao vivo** e **metadados da transmissão**.
+- Registra logs diários de consumo de quota e eventos do sistema.
 
-### Principais características
+## ✨ Principais características
 
-- **Rotação automática de chaves:**  
-  Quando a quota (10 000 u/dia) de uma chave estoura, o sistema troca para a próxima sem interromper a coleta.
+- **Rotação automática de chaves**  
+  Ao atingir o limite de uso da API (10.000 unidades/dia), o sistema troca para a próxima chave sem interrupções.
 
-- **Intervalo dinâmico:**  
-  - 21 h – 00 h → varredura a cada **10 min** (`INTERVALO_CURTO`)
-  - Demais horários → a cada **60 min** (`INTERVALO_LONGO`)
+- **Intervalo de varredura adaptativo**  
+  - Das 21h às 00h → a cada **10 minutos** (`INTERVALO_CURTO`)  
+  - Demais horários → a cada **60 minutos** (`INTERVALO_LONGO`)
 
-- **Painel Rich no terminal:**  
-  Mostra lista de lives ativas, título e duração de cada live.
+- **Painel visual no terminal (Rich)**  
+  Mostra lives ativas, título e tempo de duração.
 
-- **Travas** (`trava_<VIDEOID>`):  
-  Impedem que a mesma live seja capturada por processos duplicados.
+- **Travas de concorrência** (`trava_<VIDEOID>`)  
+  Garantem que transmissões não sejam processadas mais de uma vez simultaneamente.
 
-- **Logs de quota:**  
-  Cada linha do arquivo `log_consumo_YYYYMMDD.txt` registra quantas chamadas `search.list` (100 u) e `videos.list` (1 u) foram feitas no ciclo.
+- **Logs de quota da API**  
+  Exemplo de entrada em `log_consumo_YYYYMMDD.txt`:  
+  > `search.list` (100 u), `videos.list` (1 u), etc.
 
-### Visão geral dos arquivos
+---
 
-- **monitorar_lives.py**: Varre os canais, detecta novas transmissões ao vivo, grava metadados e dispara o coletor de chat.
-- **capturar_chat.py**: Recebe o `videoId` e grava o replay do chat em CSV durante a live.
-- **yt_api_manager.py**: Singleton que faz as chamadas à YouTube API e alterna as chaves automaticamente quando a quota estoura.
-- **yt_api_config.py**: Lista de chaves `youtube_keys` e parâmetros de timeout.
-- **canais.txt**: Um ID (ou URL) de canal por linha.
+## 📁 Visão geral dos arquivos
 
-### Fluxo
+| Arquivo                         | Função                                                                 |
+|--------------------------------|------------------------------------------------------------------------|
+| `monitorar_lives.py`           | Varre os canais, detecta novas lives, salva metadados e chama o coletor de chat |
+| `capturar_chat.py`             | Recebe um `videoId` e grava o replay do chat em CSV durante a transmissão |
+| `youtube_api_singleton.py`     | Singleton que gerencia a API e troca de chave automaticamente em caso de quota |
+| `youtube_api_config.py`        | Contém lista `youtube_keys` e parâmetros como `try_again_timeout`     |
+| `canais.txt`                   | Um ID ou URL de canal por linha                                       |
+
+---
+
+## 🔄 Fluxo geral
+
 ```
 canais.txt
 |
@@ -45,23 +54,32 @@ monitorar_lives.py → detecta live ativa
 | |
 |---------> chama capturar_chat.py -----> gera dados/chats/<canal>__<data>__<hora>__VIDEOID/chat.csv
 |
-scripts/yt_api_config.py (chaves da API)
+scripts/youtube_api_config.py (chaves da API)
 |
 log_consumo_YYYYMMDD.txt (logs diários de consumo)
 ```
 
-### Como executar
+### ✅ Como executar
 
-1. Instale dependências do projeto: `pip install -r requisitos.txt`
+1. **Instale as dependências do projeto:**
+   ```bash
+   pip install -r requisitos.txt
+   ```
 
-2. Configure suas chaves de API: 
-    - Renomeie o arquivo `yt_api_config_example` para `yt_api_config`
-    - Preencha o campo `youtube_keys` com suas chaves API do Youtube
-3. Adicione os IDs (ou URLs) dos canais no arquivo `canais.txt` (um por linha).
+2. **Configure suas chaves de API:**
+   - Renomeie o arquivo `youtube_api_config_exemplo.py` para `youtube_api_config.py`
+   - Preencha o campo `youtube_keys` com suas chaves da YouTube Data API
 
-4. Inicie o monitor executando o arquivo `monitorar_lives.py`
+3. **Adicione os IDs (ou URLs) dos canais no arquivo `canais.txt`:**  
+   Um canal por linha.
 
-### Trabalhos futuros (ideias)
+4. **Inicie o monitor executando:**
+   ```bash
+   python scripts/monitorar_lives.py
+   ```
 
-- Dashboard web em Flask exibindo painéis de lives e consumo em tempo-real.
-- Trocar `search.list` (100 u) por **playlistItems + videos** (2 u) para reduzir ainda mais a quota.
+### 💡 Trabalhos futuros (ideias)
+
+- Criar um dashboard web com Flask para exibir painéis de lives ativas e consumo de quota em tempo real.
+- Substituir chamadas `search.list` (100 u) por combinação de `playlistItems + videos.list` (2 u), otimizando o uso da quota da API.
+
