@@ -14,7 +14,7 @@
   Quando a quota (10 000 u/dia) de uma chave estoura, o sistema troca para a próxima sem interromper a coleta.
 
 - **Intervalo dinâmico:**  
-  - 22 h – 00 h → varredura a cada **10 min** (`INTERVALO_CURTO`)
+  - 21 h – 00 h → varredura a cada **10 min** (`INTERVALO_CURTO`)
   - Demais horários → a cada **60 min** (`INTERVALO_LONGO`)
 
 - **Painel Rich no terminal:**  
