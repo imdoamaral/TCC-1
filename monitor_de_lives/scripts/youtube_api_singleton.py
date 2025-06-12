@@ -12,7 +12,7 @@ import logging
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-import yt_api_config
+import youtube_api_config
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +24,8 @@ class YouTubeAPIManager:
     VERSAO = "v3"
 
     def __init__(self, timeout: int | None = None) -> None:
-        self._keys: list[str] = yt_api_config.youtube_keys
-        self._timeout: int = timeout or getattr(yt_api_config, "try_again_timeout", 60)
+        self._keys: list[str] = youtube_api_config.youtube_keys
+        self._timeout: int = timeout or getattr(youtube_api_config, "try_again_timeout", 60)
         self._idx: int = -1
         self.youtube = self._novo_cliente()
 

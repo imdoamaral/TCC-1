@@ -10,7 +10,7 @@ vídeo em CSV e, a cada 30 s, anexa novas mensagens no arquivo
 Pré-requisitos:
     - google-api-python-client
     - pandas
-    - yt_api_manager.py (mesmo diretório) + config.py
+    - youtube_api_singleton.py (mesmo diretório) + config.py
     - ser chamado pelo monitor ou manualmente:  ``python3 capturar_chat.py <ID>``
 
 O script cria um arquivo-trava em ``dados/chats/trava_<id_video>`` para impedir
@@ -31,7 +31,7 @@ from typing import Dict, List, Tuple
 
 import pandas as pd
 
-from yt_api_manager import YouTubeAPIManager
+from youtube_api_singleton import YouTubeAPIManager
 
 # CONFIGURAÇÕES
 INTERVALO_COLETA = 30 # segundos

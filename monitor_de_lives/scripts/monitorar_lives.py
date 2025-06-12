@@ -30,7 +30,7 @@ from typing import Dict, List, Tuple
 
 from rich.console import Console
 from rich.table import Table
-from yt_api_manager import YouTubeAPIManager
+from youtube_api_singleton import YouTubeAPIManager
 
 # LOGGING
 logging.getLogger("googleapiclient.http").setLevel(logging.WARNING)
