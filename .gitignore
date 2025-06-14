@@ -1,4 +1,6 @@
 .env
-monitor_de_lives/dados
-monitor_de_lives/scripts/youtube_api_config.py
-monitor_de_lives/scripts/__pycache__
+youtube_api_config.py
+__pycache__
+nohup.out
+log_consumo*
+dados
