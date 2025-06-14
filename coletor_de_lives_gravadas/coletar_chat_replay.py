@@ -17,7 +17,7 @@ import pandas as pd
 from chat_downloader import ChatDownloader
 from yt_dlp import YoutubeDL
 
-INTERVALO_GRAVACAO = 100_000 # grava num CSV se o total chega em 100.000 mensagens
+INTERVALO_GRAVACAO = 100_000  # grava num CSV se o total chega em 100.000 mensagens
 DIRETORIO_BASE = "dados"
 
 # utilidades
@@ -28,7 +28,6 @@ def gerar_nome_pasta(texto: str) -> str:
 
 def extrair_id_yt(url_ou_id: str) -> tuple[str, str]:
     """Retorna (id_video, url_para_info) aceitando ID puro, /watch?v=… ou /live/…"""
-    # ID puro (11 caracteres)
     if re.fullmatch(r"[A-Za-z0-9_-]{11}", url_ou_id):
         return url_ou_id, f"https://www.youtube.com/watch?v={url_ou_id}"
 
@@ -43,6 +42,14 @@ def extrair_id_yt(url_ou_id: str) -> tuple[str, str]:
         return last, url_ou_id.split("?")[0]
 
     return url_ou_id, url_ou_id
+
+
+def seguro_int(x) -> int:
+    """Converte x para int; se for None/""/inválido devolve 0."""
+    try:
+        return int(x)
+    except (TypeError, ValueError):
+        return 0
 
 
 def obter_metadados_video(id_video: str, url_para_info: str) -> dict:
@@ -72,9 +79,8 @@ def obter_metadados_video(id_video: str, url_para_info: str) -> dict:
         return padrao
 
     pub_iso = ""
-    if info.get("upload_date"): # YYYYMMDD
-        pub_iso = datetime.strptime(info["upload_date"], "%Y%m%d")\
-                         .strftime("%Y-%m-%dT00:00:00Z")
+    if info.get("upload_date"):  # YYYYMMDD
+        pub_iso = datetime.strptime(info["upload_date"], "%Y%m%d").strftime("%Y-%m-%dT00:00:00Z")
 
     return {
         "id_video":            id_video,
@@ -82,25 +88,22 @@ def obter_metadados_video(id_video: str, url_para_info: str) -> dict:
         "descricao":           info.get("description", ""),
         "canal":               info.get("uploader") or info.get("channel", ""),
         "data_publicacao":     pub_iso,
-        "data_inicio_live":    ts_iso(info.get("release_timestamp")
-                                   or info.get("live_start_timestamp")),
-        "espectadores_atuais": "", # não vale para replay
-        "likes":               int(info.get("like_count", 0)),
-        "visualizacoes":       int(info.get("view_count", 0)),
-        "comentarios":         int(info.get("comment_count", 0)),
+        "data_inicio_live":    ts_iso(info.get("release_timestamp") or info.get("live_start_timestamp")),
+        "espectadores_atuais": "",  # não vale para replay
+        "likes":               seguro_int(info.get("like_count")),
+        "visualizacoes":       seguro_int(info.get("view_count")),
+        "comentarios":         seguro_int(info.get("comment_count")),
     }
 
 
 def normalizar_timestamp(raw_ts: float | int) -> float:
     """
     Converte o timestamp do chat-downloader (µs ou ms) para segundos.
-      ≥1e14 → microsegundos   (div /1e6)
-      ≥1e11 → milissegundos   (div /1e3)
-      caso contrário assume já estar em segundos
+    ≥1e14 → µs; ≥1e11 → ms; senão assume segundos.
     """
-    if raw_ts >= 1e14: # 100 000 000 000 000
+    if raw_ts >= 1e14:
         return raw_ts / 1_000_000
-    if raw_ts >= 1e11: # 100 000 000 000
+    if raw_ts >= 1e11:
         return raw_ts / 1_000
     return raw_ts
 
@@ -130,8 +133,14 @@ def main() -> None:
     arq_meta = os.path.join(pasta_dest, "metadados.csv")
     arq_chat = os.path.join(pasta_dest, "chat.csv")
 
+    # grava metadados (ordem fixa de colunas)
+    campos_meta = [
+        "id_video", "titulo", "descricao", "canal",
+        "data_publicacao", "data_inicio_live", "espectadores_atuais",
+        "likes", "visualizacoes", "comentarios"
+    ]
     with open(arq_meta, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=list(meta.keys()))
+        w = csv.DictWriter(f, fieldnames=campos_meta)
         w.writeheader()
         w.writerow(meta)
     print(f"Metadados gravados em {arq_meta}")
@@ -146,8 +155,7 @@ def main() -> None:
 
     for msg in chat:
         try:
-            ts_raw = msg["timestamp"] # micro ou mili-segundos
-            seg = normalizar_timestamp(ts_raw)
+            seg = normalizar_timestamp(msg["timestamp"])
             buffer.append({
                 "id_video":  id_video,
                 "timestamp": datetime.fromtimestamp(seg, tz=timezone.utc)
