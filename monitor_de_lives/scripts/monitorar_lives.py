@@ -42,7 +42,7 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # CONFIG
-INTERVALO_CURTO = 600   # seg (22 h–0 h)
+INTERVALO_CURTO = 600   # seg (21h–0h)
 INTERVALO_LONGO = 3600  # seg (resto do dia)
 
 api_manager = YouTubeAPIManager.obter_instancia()
