@@ -1,2 +1,2 @@
-Como foi feita a listagem dos streamers?
-R: Enviei o txt da transcrição para o OpenAI o3 (a versão de raciocínio da família ChatGPT) com o seguinte prompt: {'Extraia desse txt o nome de todos os streamers mencionados no video que fazem parte dessa bolha chamada calvoesfera.'}
+Como foi feita a filtragem/extração dos streamers?
+R: Enviei o txt da transcrição para o OpenAI o3 (a versão de reflexão avançada da família ChatGPT) com o seguinte prompt: {'Extraia desse txt o nome de todos os streamers mencionados no video que fazem parte dessa bolha chamada calvoesfera.'}

@@ -105,13 +105,13 @@ for apelido, canal_id in CANAIS.items():
             ])
         time.sleep(1)
 
-    # 3.3 – salva CSV com TODOS os vídeos de 2025
-    arq_csv = os.path.join(PASTA_SAIDA, f"detalhes_{apelido}_2025.csv")
-    with open(arq_csv, "w", newline="", encoding="utf-8") as f:
-        wr = csv.writer(f)
-        wr.writerow(["Título", "Data", "URL", "Visualizações", "Duração (s)", "Foi Live?"])
-        wr.writerows(detalhes)
-    print(f"   → {len(detalhes)} vídeos de 2025 salvos em {arq_csv}")
+    # # 3.3 – salva CSV com TODOS os vídeos de 2025
+    # arq_csv = os.path.join(PASTA_SAIDA, f"detalhes_{apelido}_2025.csv")
+    # with open(arq_csv, "w", newline="", encoding="utf-8") as f:
+    #     wr = csv.writer(f)
+    #     wr.writerow(["Título", "Data", "URL", "Visualizações", "Duração (s)", "Foi Live?"])
+    #     wr.writerows(detalhes)
+    # print(f"   → {len(detalhes)} vídeos de 2025 salvos em {arq_csv}")
 
     # 3.4 – info de inscritos para o resumo
     subs = youtube.channels().list(id=canal_id, part="statistics").execute()
@@ -130,5 +130,11 @@ df = (pd.DataFrame(resumo_canais)
         .sort_values("Views Totais 2025", ascending=False)
         .reset_index(drop=True))
 
-print("\nProcessamento concluído.\n")
+# salva o resumo
+arq_resumo = os.path.join(PASTA_SAIDA, "resumo_canais_2025.csv")
+df.to_csv(arq_resumo, index=False, encoding="utf-8")
+print(f"\nResumo salvo em {arq_resumo}")
+
+# (opcional) exibir no prompt
 print(df.to_string(index=False))
+

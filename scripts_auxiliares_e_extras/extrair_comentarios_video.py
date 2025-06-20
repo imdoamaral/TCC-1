@@ -17,23 +17,23 @@ from pathlib import Path
 import csv
 import os
 
-# ───────────────────────── Configuração ──────────────────────────
+# Configuração
 CAMINHO_BASE = Path(__file__).resolve().parent
-load_dotenv(CAMINHO_BASE / ".env")            # lê .env na pasta do script
+load_dotenv(CAMINHO_BASE / ".env") # lê .env na pasta do script
 
 CHAVE_API   = os.getenv("YOUTUBE_API_KEY")
-ID_VIDEO    = "CNCMa4MizY0"                   # troque pelo ID desejado
+ID_VIDEO    = "CNCMa4MizY0" # trocar pelo ID desejado
 ARQ_SAIDA   = CAMINHO_BASE / "comentarios.csv"
-TAM_PAGINA  = 100                             # máximo permitido pela API
+TAM_PAGINA  = 100 # máximo permitido pela API
 
-# ───────────────────────── Funções ───────────────────────────────
+# Funções
 def extrair_comentarios(id_video: str, chave_api: str, arq_saida: Path) -> None:
     """Baixa comentários (inclui replies) e salva no CSV indicado."""
     youtube = build("youtube", "v3", developerKey=chave_api, cache_discovery=False)
     comentarios: list[list[str]] = []
 
     requisicao = youtube.commentThreads().list(
-        part="snippet,replies",               # inclui respostas
+        part="snippet,replies", # inclui respostas aos proprios comentarios
         videoId=id_video,
         maxResults=TAM_PAGINA,
         textFormat="plainText"
@@ -71,7 +71,7 @@ def extrair_comentarios(id_video: str, chave_api: str, arq_saida: Path) -> None:
     print(f"{len(comentarios)} comentários salvos em {arq_saida}")
 
 
-# ───────────────────────── Execução ──────────────────────────────
+# Execução
 if __name__ == "__main__":
     if not CHAVE_API:
         raise RuntimeError("Defina YOUTUBE_API_KEY no arquivo .env.")
