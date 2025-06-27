@@ -8,6 +8,7 @@ Monitor contínuo de lives em canais do YouTube.
     1. Salva metadados em ``../dados/metadados/``.
     2. Dispara ``capturar_chat.py`` em subprocesso para baixar o chat.
 • Usa ``YouTubeAPIManager`` (singleton) para rotação de chaves.
+• Possui tratamento para reiniciar automaticamente após falhas de conexão.
 
 Requer:
     - google-api-python-client, rich
@@ -32,6 +33,9 @@ from rich.console import Console
 from rich.table import Table
 from youtube_api_singleton import YouTubeAPIManager
 
+# Adicionado para tratar o erro específico de conexão
+from httplib2.error import ServerNotFoundError
+
 # LOGGING
 logging.getLogger("googleapiclient.http").setLevel(logging.WARNING)
 logging.basicConfig(
@@ -45,7 +49,6 @@ log = logging.getLogger(__name__)
 INTERVALO_CURTO = 600   # seg (21h–0h)
 INTERVALO_LONGO = 3600  # seg (resto do dia)
 
-api_manager = YouTubeAPIManager.obter_instancia()
 console = Console()
 
 # FUNÇÕES UTIL
@@ -79,7 +82,7 @@ def gerar_nome_pasta(texto: str) -> str:
     return "".join(c if c.isalnum() or c in "._-" else "_" for c in texto) or "canal"
 
 # API WRAPPERS
-def buscar_lives_ativas(canal_id: str) -> List[Tuple[str, str]]:
+def buscar_lives_ativas(api_manager: YouTubeAPIManager, canal_id: str) -> List[Tuple[str, str]]:
     resp = api_manager.executar_requisicao(
         lambda c, **kw: c.search().list(**kw),
         part="id,snippet",
@@ -94,7 +97,7 @@ def buscar_lives_ativas(canal_id: str) -> List[Tuple[str, str]]:
     ]
 
 
-def buscar_metadados(id_video: str) -> Dict:
+def buscar_metadados(api_manager: YouTubeAPIManager, id_video: str) -> Dict:
     resp = api_manager.executar_requisicao(
         lambda c, **kw: c.videos().list(**kw),
         part="snippet,liveStreamingDetails,statistics",
@@ -120,7 +123,7 @@ def buscar_metadados(id_video: str) -> Dict:
     }
 
 
-def live_ainda_ativa(id_video: str) -> bool:
+def live_ainda_ativa(api_manager: YouTubeAPIManager, id_video: str) -> bool:
     resp = api_manager.executar_requisicao(
         lambda c, **kw: c.videos().list(**kw),
         part="liveStreamingDetails",
@@ -200,48 +203,66 @@ def main() -> None:
     # canal_id → {vid, inicio, canal_nome, titulo}
     vivos: Dict[str, Dict] = {}
 
-    log.info("Monitorando %d canais…", len(canais))
+    # Laço de repetição externo para garantir que o script reinicie em caso de falha de rede
     while True:
-        q_busca = q_meta = 0
+        try:
+            # A instância da API agora é criada dentro do try/except
+            api_manager = YouTubeAPIManager.obter_instancia()
+            log.info("Monitorando %d canais…", len(canais))
 
-        for canal in canais:
-            # se já há live, verifique se terminou
-            if canal in vivos:
-                if live_ainda_ativa(vivos[canal]["vid"]):
-                    continue
-                log.info("Live %s finalizada.", vivos[canal]["vid"])
-                vivos.pop(canal, None)
+            # Laço de monitoramento principal (lógica original)
+            while True:
+                q_busca = q_meta = 0
 
-            # buscar novas lives
-            q_busca += 1
-            for vid, titulo in buscar_lives_ativas(canal):
-                if trava_ativa(vid, base_dir):
-                    continue
+                for canal in canais:
+                    # se já há live, verifique se terminou
+                    if canal in vivos:
+                        if live_ainda_ativa(api_manager, vivos[canal]["vid"]):
+                            continue
+                        log.info("Live %s finalizada.", vivos[canal]["vid"])
+                        vivos.pop(canal, None)
 
-                meta = buscar_metadados(vid)
-                q_meta += 1
-                if meta:
-                    salvar_metadados(vid, meta, base_dir)
+                    # buscar novas lives
+                    q_busca += 1
+                    for vid, titulo in buscar_lives_ativas(api_manager, canal):
+                        if trava_ativa(vid, base_dir):
+                            continue
 
-                log.info("Nova live: %s — %s", meta["canal"], titulo)
-                iniciar_captura_chat(vid, base_dir)
+                        meta = buscar_metadados(api_manager, vid)
+                        q_meta += 1
+                        if meta:
+                            salvar_metadados(vid, meta, base_dir)
 
-                vivos[canal] = {
-                    "vid": vid,
-                    "inicio": datetime.now(),
-                    "canal_nome": meta["canal"],
-                    "titulo": titulo[:60],
-                }
+                        log.info("Nova live: %s — %s", meta["canal"], titulo)
+                        iniciar_captura_chat(vid, base_dir)
 
-        exibir_status(vivos)
-        registrar_consumo(q_busca, q_meta)
+                        vivos[canal] = {
+                            "vid": vid,
+                            "inicio": datetime.now(),
+                            "canal_nome": meta["canal"],
+                            "titulo": titulo[:60],
+                        }
 
-        intervalo = obter_intervalo()
-        log.info("Aguardando %d min…\n", intervalo // 60)
-        time.sleep(intervalo)
+                exibir_status(vivos)
+                registrar_consumo(q_busca, q_meta)
+
+                intervalo = obter_intervalo()
+                log.info("Aguardando %d min…\n", intervalo // 60)
+                time.sleep(intervalo)
+
+        # Tratamento para falha de conexão
+        except ServerNotFoundError:
+            log.error("Falha de conexão. Tentando novamente em 5 minutos...")
+            time.sleep(300)  # Espera 5 minutos antes de tentar o laço externo novamente
+        # Tratamento para interrupção do usuário (Ctrl+C)
+        except KeyboardInterrupt:
+            log.info("Monitor interrompido pelo usuário.")
+            break  # Sai do laço externo e encerra o script
+        # Tratamento para qualquer outra exceção inesperada
+        except Exception as e:
+            log.critical("Ocorreu um erro inesperado: %s. Reiniciando em 5 minutos.", e)
+            time.sleep(300)
+
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        log.info("Monitor interrompido pelo usuário.")
+    main()
