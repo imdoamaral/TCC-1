@@ -16,8 +16,6 @@ youtube = build("youtube", "v3", developerKey=API_KEY)
 
 CANAIS = {
     "luangameplay":      "UCddN6tViXZMEOfvO-rqfbNg",
-    "cavalao2":          "UCSl2-bnD5irdJkk7ejJS4ow",
-    "biahkov":           "UCPTmDqH4cUbTJ_XABClIFlw",
     "fabiojunior":       "UC1WdbwLH7azQtv3BAnYt_vg",
     "diegosheipado":     "UC0Zhnj_IarrejROxchWtkMQ",
     "canaldoronaldinho": "UCjIN9CsGuLhj7NkNspZxw7g",
@@ -115,7 +113,11 @@ for apelido, canal_id in CANAIS.items():
 
     # 3.4 – info de inscritos para o resumo
     subs = youtube.channels().list(id=canal_id, part="statistics").execute()
-    inscritos = limpa_num(subs["items"][0]["statistics"]["subscriberCount"])
+    if subs.get("items") and len(subs["items"]) > 0:
+        inscritos = limpa_num(subs["items"][0]["statistics"].get("subscriberCount"))
+    else:
+        inscritos = 0  # ou None, se preferir
+        print(f"   [AVISO] Canal '{apelido}' não encontrado ou banido.")
 
     resumo_canais.append({
         "Canal": apelido,
