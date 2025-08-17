@@ -8,7 +8,7 @@ from googleapiclient import discovery
 from googleapiclient.errors import HttpError
 
 # --- PARÂMETROS DO EXPERIMENTO ---
-API_KEY = "AIzaSyD-JUQajVQamSr5xaATHPVioN_eQ4sWU4c"
+API_KEY = "INSERIR_CHAVE_API_AQUI"
 ARQUIVO_ROTULADO = "amostra_rotulada.csv"
 ARQUIVO_LOG = "log_experimento.txt"
 N_REPLICACOES = 30
