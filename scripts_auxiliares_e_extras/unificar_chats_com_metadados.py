@@ -3,7 +3,7 @@ import pandas as pd
 
 # Intervalo desejado
 DATA_INICIO = pd.to_datetime("2025-06-14T00:00:00+00:00")
-DATA_FIM = pd.to_datetime("2025-07-14T23:59:59+00:00")
+DATA_FIM = pd.to_datetime("2025-08-14T23:59:59+00:00")
 
 CAMINHO_DADOS = "/home/israel/Documentos/GitHub/dados"
 todos_dados = []
