@@ -21,6 +21,7 @@ CANAIS = {
     "canaldoronaldinho": "UCjIN9CsGuLhj7NkNspZxw7g",
     "wallacegamer":      "UCb7JJAHkxdMVmFXw8tYDDdw",
     "renanplay":         "UCP-HJIRXN-apUPSCOehEDZw",
+    "canaldocelinho":    "UCQj3EYemd3wu4ZO3J46qnjQ",
 }
 
 PASTA_SAIDA = "dados_calvoesfera"
@@ -121,10 +122,10 @@ for apelido, canal_id in CANAIS.items():
 
     resumo_canais.append({
         "Canal": apelido,
+        "Inscritos (atual)": inscritos,
         "Lives 2025": lives_2025,
         "Views Lives 2025": live_views_2025,
         "Views Totais 2025": total_views_2025,
-        "Inscritos (atual)": inscritos,
     })
 
 # 4 ─ RELATÓRIO FINAL
@@ -139,4 +140,3 @@ print(f"\nResumo salvo em {arq_resumo}")
 
 # (opcional) exibir no prompt
 print(df.to_string(index=False))
-
